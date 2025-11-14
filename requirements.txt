@@ -1,5 +1,4 @@
 streamlit
-fotmob
 fotmob-wrapper
 requests
 beautifulsoup4
