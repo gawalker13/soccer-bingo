@@ -214,7 +214,7 @@ with st.expander("Click Here"):
        3. If a player is substituted before halftime, the substitute counts. 
        4. Click the ✅ below squares as events happen.
        5. For confirmation on the stats, please go to fotmob.com and look for the game(s) you picked. Then look for your player(s) and look for the stat(s)
-
+       6. If you're on mobile, flip your phone horizontally after generating the bingo board to see the board. 
 
        ### Example Squares
        - **Vinícius Jr 2+ shots**
