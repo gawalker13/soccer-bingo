@@ -582,3 +582,5 @@ if "bingo_board" in st.session_state:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+st.markdown('<div class="footer"><div style="text-align:center"><small>Created By: Garrett Walker</small></div>', unsafe_allow_html=True)
