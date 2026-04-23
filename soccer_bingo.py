@@ -245,6 +245,7 @@ with st.expander("📋 How to play"):
 4. Fewer than 24? The board auto-fills the rest randomly.
 5. The **center square is free**.
 6. Click **✅** under each square as events happen — get **5 in a row** to win!
+7. Flip your phone horizontally, if you're on the phone
     """)
 
 
