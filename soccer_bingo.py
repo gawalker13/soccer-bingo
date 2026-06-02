@@ -245,7 +245,8 @@ with st.expander("📋 How to play"):
 4. Fewer than 24? The board auto-fills the rest randomly.
 5. The **center square is free**.
 6. Click **✅** under each square as events happen — get **5 in a row** to win!
-7. Flip your phone horizontally, if you're on the phone
+7. If you're on mobile, flip your device horizontally.
+8. Please note, if you press generate bingo board with less than 24 squares, it will generate from the currently selected match.
     """)
 
 
@@ -316,29 +317,60 @@ async def get_todays_games(user_tz: str):
 
 
 async def get_players_from_game(home_id, away_id):
-    """Fetch squads directly by team ID — avoids the blocked matchDetails endpoint."""
+    """Fetch squads directly by team ID — avoids the blocked matchDetails endpoint.
+    
+    Returns a dict: {display_label: position_category}
+    where display_label is "Name (POS)" and position_category is one of
+    "goalkeeper", "defender", "midfielder", "forward", or "unknown".
+    """
     async with FotMob() as fotmob:
-        players = set()
+
+        def classify_group_title(title: str) -> str:
+            """Derive position category from the squad group heading FotMob uses."""
+            t = (title or "").lower()
+            if any(k in t for k in ("goalkeeper", "keeper", "portero", "goleiro", "gardien")):
+                return "goalkeeper"
+            if any(k in t for k in ("defender", "defence", "defense", "back", "defens")):
+                return "defender"
+            if any(k in t for k in ("midfielder", "midfield", "medio", "milieu")):
+                return "midfielder"
+            if any(k in t for k in ("forward", "attack", "striker", "winger", "attaquant")):
+                return "forward"
+            return "unknown"
+
+        SHORT_POS = {
+            "goalkeeper": "GK",
+            "defender":   "DEF",
+            "midfielder": "MID",
+            "forward":    "FWD",
+            "unknown":    "?",
+        }
+
+        players_dict = {}  # label -> position_category
 
         async def extract_team_players(team_id):
             if not team_id:
-                return []
+                return
             team_data  = await fotmob.get_team(team_id)
             squad_data = (team_data or {}).get("squad", {}).get("squad", [])
-            out = []
             for group in squad_data:
-                title = (group.get("title") or "").lower()
-                if "coach" in title or "manager" in title:
+                title = group.get("title") or ""
+                if any(skip in title.lower() for skip in ("coach", "manager", "staff")):
                     continue
+                # Classify the whole group by its heading — this is reliable
+                pos_cat = classify_group_title(title)
+                short   = SHORT_POS[pos_cat]
                 for member in group.get("members", []):
                     name = member.get("name")
-                    if name and isinstance(name, str):
-                        out.append(name.strip())
-            return out
+                    if not name or not isinstance(name, str):
+                        continue
+                    name  = name.strip()
+                    label = f"{name} ({short})"
+                    players_dict[label] = pos_cat
 
-        players.update(await extract_team_players(home_id))
-        players.update(await extract_team_players(away_id))
-        return sorted(players)
+        await extract_team_players(home_id)
+        await extract_team_players(away_id)
+        return players_dict  # {label: pos_category}
 
 
 # ----------------------------
@@ -360,14 +392,31 @@ def check_bingo(marked):
 # ----------------------------
 # Event pools
 # ----------------------------
-PLAYER_EVENTS = [
-    "2 shots", "3 shots", "4+ shots", "1 SoT", "2+ SoT",
-    "anytime assist", "anytime goalscorer", "3 saves", "4 saves", "5+ saves",
-    "3+ tackles", "3 clearances", "4+ clearances", "2 fouls", "3+ fouls",
-    "35+ accurate passes", "40+ accurate passes", "50+ attempted passes",
-    "90%+ pass accuracy", "2 successful dribbles", "3+ successful dribbles",
-    "3+ crosses", "4+ crosses", "yellow card", "red card",
+# Position-aware event pools
+# Goalkeepers: saves, distribution — no outfield shots/dribbles/crosses
+GK_EVENTS = [
+    "3 saves", "4 saves", "5+ saves", "6+ saves",
+    "clean sheet",
+    "35+ accurate passes", "40+ accurate passes", "90%+ pass accuracy",
+    "yellow card", "red card",
+    "2+ punches", "1+ penalty saved",
 ]
+
+# Outfield players: shots, goals, assists — no saves
+OUTFIELD_EVENTS = [
+    "2 shots", "3 shots", "4+ shots", "1 SoT", "2+ SoT",
+    "anytime assist", "anytime goalscorer",
+    "3+ tackles", "3 clearances", "4+ clearances",
+    "2 fouls", "3+ fouls",
+    "35+ accurate passes", "40+ accurate passes", "50+ attempted passes",
+    "90%+ pass accuracy",
+    "2 successful dribbles", "3+ successful dribbles",
+    "3+ crosses", "4+ crosses",
+    "yellow card", "red card",
+]
+
+# Combined list for the manual builder dropdown (user picks their own player)
+PLAYER_EVENTS = sorted(set(GK_EVENTS) | set(OUTFIELD_EVENTS))
 TEAM_EVENTS = [
     "8+ shots", "10+ shots", "2+ goals", "1+ set-piece goal", "4 SoT", "5+ SoT",
     "4 corners", "5+ corners", "10+ fouls", "3+ offsides",
@@ -399,12 +448,16 @@ selected_label = st.selectbox("Match", [m["label"] for m in games_today], label_
 selected_game  = next(m for m in games_today if m["label"] == selected_label)
 
 with st.spinner("Fetching squad info..."):
-    PLAYERS = run_async(get_players_from_game(selected_game["home_id"], selected_game["away_id"]))
+    PLAYERS_DICT = run_async(get_players_from_game(selected_game["home_id"], selected_game["away_id"]))
+    # PLAYERS_DICT: {"Name (POS)": "goalkeeper"|"defender"|"midfielder"|"forward"|"unknown"}
 
-if not PLAYERS:
+if not PLAYERS_DICT:
     st.warning("No players found automatically. Enter them manually below.")
     manual_players = st.text_area("Player names (comma-separated)")
-    PLAYERS = [p.strip() for p in manual_players.split(",") if p.strip()]
+    # Manual entries: treat all as outfield (unknown position)
+    PLAYERS_DICT = {p.strip(): "unknown" for p in manual_players.split(",") if p.strip()}
+
+PLAYERS = sorted(PLAYERS_DICT.keys())
 
 teams = [selected_game["home_name"], selected_game["away_name"]]
 
@@ -474,9 +527,11 @@ if st.button("⚽ GENERATE BINGO BOARD", use_container_width=True):
     bingo_lines = st.session_state.bingo_choices.copy()
 
     AUTO_POOL = []
-    for p in PLAYERS:
-        for ev in PLAYER_EVENTS:
-            AUTO_POOL.append(f"{p} — {ev}")
+    for label in PLAYERS:
+        pos_cat  = PLAYERS_DICT.get(label, "unknown")
+        evt_list = GK_EVENTS if pos_cat == "goalkeeper" else OUTFIELD_EVENTS
+        for ev in evt_list:
+            AUTO_POOL.append(f"{label} — {ev}")
     for team in teams:
         for ev in TEAM_EVENTS:
             AUTO_POOL.append(f"{team} — {ev}")
