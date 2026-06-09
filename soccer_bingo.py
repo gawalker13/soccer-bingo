@@ -448,8 +448,11 @@ selected_label = st.selectbox("Match", [m["label"] for m in games_today], label_
 selected_game  = next(m for m in games_today if m["label"] == selected_label)
 
 with st.spinner("Fetching squad info..."):
-    PLAYERS_DICT = run_async(get_players_from_game(selected_game["home_id"], selected_game["away_id"]))
-    # PLAYERS_DICT: {"Name (POS)": "goalkeeper"|"defender"|"midfielder"|"forward"|"unknown"}
+    try:
+        PLAYERS_DICT = run_async(get_players_from_game(selected_game["home_id"], selected_game["away_id"]))
+        # PLAYERS_DICT: {"Name (POS)": "goalkeeper"|"defender"|"midfielder"|"forward"|"unknown"}
+    except Exception:
+        PLAYERS_DICT = {}
 
 if not PLAYERS_DICT:
     st.warning("No players found automatically. Enter them manually below.")
